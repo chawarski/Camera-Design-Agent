@@ -3,7 +3,7 @@ import ollama
 import json
 
 EMBED_MODEL = "nomic-embed-text"
-CHAT_MODEL = "llama3.2"
+CHAT_MODEL = "phi4-mini-reasoning"
 
 def embed(text: str) -> np.ndarray:
     print('embedding')
@@ -26,19 +26,22 @@ def retrieve(question: str, k: int = 2) -> list[str]:
 def answer(question: str) -> str:
     print('answering')
     # print(f"\nQ: {question}\nRetrieved:")
-    context = "\n".join(f"- {c}" for c in retrieve(question))
-    # context = slices
+    # context = "\n".join(f"- {c}" for c in retrieve(question))
+    context = slices
     # print(context)
     prompt = (
         "Answer using ONLY the context below. "
         "If the answer isn't in the context, say you don't know.\n\n"
         f"Context:\n{context}\n\nQuestion: {question}"
     )
-    reply = ollama.chat(model=CHAT_MODEL, messages=[{"role": "user", "content": prompt}])
+    reply = ollama.chat(
+        model=CHAT_MODEL, 
+        messages=[{"role": "user", "content": prompt}],
+        options={"num_gpu": 99, "num_ctx": 6144, "num_predict": 4096, "temperature": 0.0})
     return reply["message"]["content"]
 
-with open(r"eval\camera.json", "r", encoding="utf-8") as f:
+with open(r"table_data.json", "r", encoding="utf-8") as f:
     slices = json.load(f)
 
-q = "How to test Nano with Lens"
+q = "Which models have Lens C-mount?"
 print("A:" + answer(q))
