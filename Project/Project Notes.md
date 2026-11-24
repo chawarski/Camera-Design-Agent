@@ -9,3 +9,4 @@
 - Llama3.2 was not able to answer multi-stage questions (lookup all models that have C-mount Lens). Phi4-mini-reasoning retruned accurate multi-stage answers quickly. It is English only model.
 - Phi4-mini-reasoning was not able to identify and reject gibberish questions.
 - Learned about VRAM head-room. we want to pick one model that will be best for most tasks and keep it in memory for the pipeline. Excluding the chunk/index. Use model-keep alive to keep the model in memory and avoid cold-starts.
+- multi-user? and grow context, swappability loose-coupling, seperate langchain.py
