@@ -5,7 +5,7 @@ from pydantic import BaseModel
 import re
 
 EMBED_MODEL = "nomic-embed-text"
-CHAT_MODEL = "phi4-mini-reasoning"
+CHAT_MODEL = "qwen3.5"
 
 
 class ExtractedSpec(BaseModel):
@@ -34,16 +34,16 @@ def retrieve(question: str, k: int = 2) -> list[str]:
 def answer(question: str) -> str:
     print('answering')
     # print(f"\nQ: {question}\nRetrieved:")
-    # context = "\n".join(f"- {c}" for c in retrieve(question))
-    context = slices
-    # print(context)
+    context = "\n".join(f"- {c}" for c in retrieve(question))
+    # context = slices
+    print(context)
     prompt = (
-        "Answer using ONLY the context below. "
+        "Answer using ONLY the context below. Summarize answer to one sentence."
         "If the answer isn't in the context, say you don't know.\n\n"
         f"Context:\n{context}\n\nQuestion: {question}"
     )
     token_estimate = len(str(prompt))/4
-    print("tokens: " + str(token_estimate))
+    print("estimated tokens: " + str(token_estimate))
     reply = ollama.chat(
         model=CHAT_MODEL, 
         messages=[{"role": "user", "content": prompt}],
@@ -93,5 +93,5 @@ def decide(question: str) -> str:
     
     return parsed.model_dump_json(indent=2)
 
-q = "What is the sensor type in model M640?"
-print("A:" + decide(q))
+q = "Where can the latest firmware files be found?"
+print("A:" + answer(q))

@@ -29,35 +29,42 @@ def route(question: str) -> str:
     reply = ollama.chat(model=CHAT_MODEL, messages=[{"role": "user", "content": prompt}])
     return reply["message"]["content"]
 
-def split_page(page, page_number: int, image_dir: Path, chapter: str="default"):
+def split_page(page, page_number: int, image_dir: Path, text_dir: Path, chapter: str="default"):
+    ''' Split pdf document into table areas and non-table areas.
+        Iterate through document by chapter
+        Save table images, each table as a png file
+        Save non-table text from each chapter to file
+    '''
+    
+    # Create directories
     image_dir.mkdir(parents=True, exist_ok=True)
+    text_dir.mkdir(parents=True, exist_ok=True)
     
     table_regions = []
     table_data = []
+    name = re.sub(r'[<>:"/\\|?*]', "", chapter)
 
     for table_index, table in enumerate(page.find_tables().tables):
         rect = pymupdf.Rect(table.bbox)
         table_regions.append(rect)
 
+        # image_path = image_dir / f"{name}-page-{page_number:04d}-table-{table_index:02d}.png"
+        # page.get_pixmap(clip=rect, dpi=150).save(str(image_path))
 
-        safe_name = re.sub(r'[<>:"/\\|?*]', "", chapter)
-        image_path = image_dir / f"{safe_name}-page-{page_number:04d}-table-{table_index:02d}.png"
-        page.get_pixmap(clip=rect, dpi=150).save(str(image_path))
+        # table_data.append({
+        #     "page": page_number,  # 1-based PDF page number
+        #     "bbox": [float(value) for value in table.bbox],
+        #     "image": str(image_path),
+        # })
 
-        table_data.append({
-            "page": page_number,  # 1-based PDF page number
-            "bbox": [float(value) for value in table.bbox],
-            "image": str(image_path),
-        })
-
-    # Group words by their original text block and line, excluding words
-    # inside detected table boxes.
+    # Group words by their original text block and line, excluding words inside detected table boxes.
     lines: dict[tuple[int, int], list[tuple[int, str]]] = {}
 
     for word in page.get_text("words"):
         x0, y0, x1, y1, text, block_no, line_no, word_no = word
         word_rect = pymupdf.Rect(x0, y0, x1, y1)
 
+        # Skip any words inside table rect areas
         if any(word_rect.intersects(table_rect) for table_rect in table_regions):
             continue
 
@@ -67,7 +74,9 @@ def split_page(page, page_number: int, image_dir: Path, chapter: str="default"):
         " ".join(text for _, text in sorted(lines[key]))
         for key in sorted(lines)
     )
-
+    
+    text_path = text_dir / f"{name}-page-{page_number:04d}-text.txt"
+    text_path.write_text(non_table_text, encoding="utf-8")
     return non_table_text
         
 
@@ -98,7 +107,7 @@ for chapter in chapters:
     page_end = toc[chapter+1][2]-1
     # raw_text = ",".join(page.get_text() for page in doc if page_start <= page.number <= page_end)
     raw_text = ""
-    raw_text = ",".join(split_page(page, page.number, Path("table_images"), toc[chapter][1]) for page in doc if page_start <= page.number <= page_end)
+    raw_text = ",".join(split_page(page, page.number, Path("table_images"), Path("chapter_text"), toc[chapter][1]) for page in doc if page_start <= page.number <= page_end)
     chunks = chunk_text(raw_text)
 
     for i, chunk in enumerate(chunks):
