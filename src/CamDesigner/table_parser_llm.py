@@ -30,120 +30,64 @@ class CompactTable(BaseModel):
     headers: list[str]
     rows: list[list[str]]  # Each inner list aligns positionally with headers
 
-# Create a directory for processed images. Images will be moved here after they are converted to JSON
-destination_folder = Path("processed_tables")
-destination_folder.mkdir(parents=True, exist_ok=True)
+class TableParser:
+     def parse_tables(self):
+        # Create a directory for processed images. Images will be moved here after they are converted to JSON
+        processed_dir = Path(__file__).resolve().parents[3] / "processed_tables" 
+        processed_dir.mkdir(parents=True, exist_ok=True)
 
-path = Path(r"table_data.json")
+        path = Path(__file__).resolve().parents[3] / "table_data.json" 
 
-if path.exists():
-    with open(path, "r", encoding="utf-8") as file:
-        data = json.load(file)
-else:
-    print("It does not exist")
-    data = {
-            "document": {
-              "title": "Genie Nano Series Camera User's Manual"
-            },
-            "tables": []
-        }
-
-
-if use_gemini:
-    # Set model to use for the chatbot, from https://aistudio.google.com/docs/models
-    # model = "gemini-3.8-flash"
-    model = "gemini-4-hydrogen"
-    tokens_used = 0 # Initialize token usage counter
-    api_key = os.environ["MY_API_KEY"]
-    try:
-        # Create a client instance with your API key
-        print("..Initializing gemini")
-        client = genai.Client(api_key=api_key)
-        
-        # Send a tiny prompt to verify end-to-end execution
-        response = client.interactions.create(
-            model=model,
-            input="ping",
-        )
-            
-    except Exception as e:
-        raise SystemExit(f"Exiting due to failed Gemini AI client connection: {e}")
-
-    # Welcome message indicating good connection to Gemini AI and the model being used
-    print(f"Hello, this is Gemini AI chatbot, you are speaking to {model}")
-
-
-for image_path in sorted(Path("table_images").glob("*.png")):
-    print(f"...processing {image_path.name}")
-    image_data = base64.b64encode(image_path.read_bytes()).decode("utf-8")
-
-# image_path = Path(r"table_images\Overview-page-0257-table-00.png")
-# image_data = base64.b64encode(image_path.read_bytes()).decode("utf-8")
-    schema = CompactTable.model_json_schema()
-    # focused_query = f"Use image data of a table and parse it. Convert table data to llm readable JSON format. Keep rows and headings together. Give response in JSON format."
-    focused_query = f"""Extract the table from this image into row-by-row JSON.
-        Rules:
-        1. Do NOT output bounding boxes, coordinates, or pixel locations.
-        2. Group cells horizontally by row, pairing each cell value with its exact column header.
-        3. If a row has merged/split sub-rows (such as C-mount and CS-mount), repeat the parent row values so every row is complete.
-        4. Return ONLY valid JSON matching this schema:
-        {schema}"""
-    if not use_gemini:
-        print("..running query with ollama")
-
-        
-
-        response =ollama.chat(
-            model="qwen2.5vl",
-            messages=[
-                {
-                    "role": "user",
-                    "content": (focused_query),
-                    "images": [image_path],
+        if path.exists():
+            with open(path, "r", encoding="utf-8") as file:
+                data = json.load(file)
+        else:
+            data = {
+                    "document": {
+                    "title": "Genie Nano Series Camera User's Manual"
+                    },
+                    "tables": []
                 }
-            ],
-            format=schema,
-            options={"num_gpu": 99, "num_ctx": 6144, "num_predict": 4096, "temperature": 0.0},
-            )
-        print(response["message"]["content"])
-        if response.get("done_reason") == "length":
-            raise RuntimeError(f"Output truncated at {response.get('eval_count')} tokens—split the table image horizontally.")
+        image_dir = Path(__file__).resolve().parents[3] / "table_images" 
+        schema = CompactTable.model_json_schema()
+        focused_query = f"""Extract the table from this image into row-by-row JSON.
+            Rules:
+            1. Do NOT output bounding boxes, coordinates, or pixel locations.
+            2. Group cells horizontally by row, pairing each cell value with its exact column header.
+            3. If a row has merged/split sub-rows (such as C-mount and CS-mount), repeat the parent row values so every row is complete.
+            4. Return ONLY valid JSON matching this schema:
+            {schema}"""
 
-        table_data = CompactTable.model_validate_json(response["message"]["content"])
-        # print("message:" + str(response["message"]))
-        # print("content:" + str(response["content"]))
+        print("..running query with ollama")
+        for image_path in sorted(image_dir.glob("*.png")):
+            print(f"...processing {image_path.name}")
+            # image_data = base64.b64encode(image_path.read_bytes()).decode("utf-8")
+            response =ollama.chat(
+                model="qwen2.5vl",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": (focused_query),
+                        "images": [image_path],
+                    }
+                ],
+                format=schema,
+                options={"num_gpu": 99, "num_ctx": 6144, "num_predict": 4096, "temperature": 0.0},
+                )
+            print(response["message"]["content"])
+            if response.get("done_reason") == "length":
+                raise RuntimeError(f"Output truncated at {response.get('eval_count')} tokens—split the table image horizontally.")
 
-        # table_json = json.loads(response["message"])
-        data["tables"].append({
-            "name": image_path.name,
-            "data": table_data.model_dump(mode="json")
-        })
+            table_data = CompactTable.model_validate_json(response["message"]["content"])
 
-
-    if use_gemini:
-        interaction = client.interactions.create(
-            model=model,
-            input=[
-                {"type": "text", "text": focused_query},
-                {
-                    "type": "image",
-                    "data": image_data,
-                    "mime_type": "image/png",
-                },
-            ],
-        )
-        print(f"  {interaction.output_text}")
-        response_text = interaction.output_text
-        if response_text.startswith("```"):
-            response_text = response_text.split("\n", 1)[1]
-            response_text = response_text.rsplit("```", 1)[0].strip()
-            table_json = json.loads(response_text)
             data["tables"].append({
                 "name": image_path.name,
-                "data": table_json
+                "data": table_data.model_dump(mode="json")
             })
 
-    print(response["message"]["content"])
+            with open(path, "w", encoding="utf-8") as file:
+                json.dump(data, file, indent=2, ensure_ascii=False)
+            shutil.move(str(image_path), str(processed_dir / image_path.name))
 
     # response_text = interaction.output_text
     # if response_text.startswith("```"):
@@ -155,8 +99,7 @@ for image_path in sorted(Path("table_images").glob("*.png")):
     #         "data": table_json
     #     })
 
-with open("table_data.json", "w", encoding="utf-8") as file:
-            json.dump(data, file, indent=2, ensure_ascii=False)
+        
 
     #     shutil.move(str(image_path), str(destination_folder / image_path.name))
     # else:
